@@ -1,0 +1,13 @@
+<AlibreDesignAddOn specificationVersion="2" friendlyName="Set Color from Material">
+  <Author name="Cator and the Alibre Design forum community" link="https://www.alibre.com/forum/index.php?resources/set-color-from-material.150/"/>
+  <Copyright>Set Color from Material script (c) Cator and the Alibre Design forum community. Add-on host (c) 2026 Stephen S. Mitchell.</Copyright>
+  <DLL type="Managed" loadedWhen="Startup" location="SetColorFromMaterial.dll"/>
+  <Icon location="SetColorFromMaterial.ico"/>
+  <Menu text="Set Color from Material"/>
+  <Description>Host for the Set Color from Material Alibre Script program. 
+  This is a script that Cator wrote and others helped finalize - thanks for everyone's help - that will add a color when assigning material to your model. 
+  It has colors listed (RGB) for all the standard Alibre materials as well as colors that follow the KeyShot scheme. 
+  You may need to edit for your particular usage. Source: https://www.alibre.com/forum/index.php?resources/set-color-from-material.150/</Description>
+  <Workspace type="Always"/>
+  <Property name="Identifier" value="{14D634F7-663E-4CEC-9B55-120BBA5066DA}"/>
+</AlibreDesignAddOn>
