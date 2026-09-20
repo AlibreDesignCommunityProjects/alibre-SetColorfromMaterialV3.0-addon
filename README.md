@@ -1,5 +1,7 @@
 # Set Color from Material - Alibre Design Add-On
 
+<img width="1026" height="288" alt="Screenshot 2026-09-20 180221" src="https://github.com/user-attachments/assets/9131760f-4aaa-4a72-bb54-90d95a214363" />
+
 A host for the Set Color from Material Alibre Script program, published on the
 Alibre Design forum:
 
