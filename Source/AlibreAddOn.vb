@@ -48,6 +48,8 @@ Namespace AlibreAddOnAssembly
         Private Const ROOT_ID As Integer = 1200
         Private Const CMD_SET_COLOR As Integer = 1201
         Private Const DIALOG_WATCH_MS As Integer = 600000
+        Private Const MIN_DIALOG_WIDTH As Integer = 200
+        Private Const MIN_DIALOG_HEIGHT As Integer = 120
         Private Const GA_ROOT As UInteger = 2UI
 
         Private ReadOnly _alibreRoot As IADRoot
@@ -56,6 +58,7 @@ Namespace AlibreAddOnAssembly
         Private _parentForm As Form
         Private _hostBounds As Rectangle = Rectangle.Empty
         Private _scriptRunning As Boolean
+        Private _scriptThreadId As UInteger
 
         <StructLayout(LayoutKind.Sequential)>
         Private Structure NativeRect
@@ -79,6 +82,10 @@ Namespace AlibreAddOnAssembly
 
         <DllImport("user32.dll")>
         Private Shared Function IsWindowVisible(window As IntPtr) As Boolean
+        End Function
+
+        <DllImport("user32.dll", SetLastError:=True)>
+        Private Shared Function GetWindowThreadProcessId(window As IntPtr, ByRef processId As UInteger) As UInteger
         End Function
 
         Public Sub New(alibreRoot As IADRoot, parentWinHandle As IntPtr)
@@ -171,9 +178,11 @@ Namespace AlibreAddOnAssembly
             Dim parent As Form = ResolveParentForm(identifier)
             _parentForm = parent
             _scriptRunning = True
+            _scriptThreadId = 0UI
             CenterDialogs()
             Dim runner As New ScriptRunner(_alibreRoot, RuntimeFolder)
             runner.RunInBackground(session, identifier, ScriptPath, parent,
+                                   Sub(threadId As UInteger) _scriptThreadId = threadId,
                                    Sub() _scriptRunning = False)
         End Sub
 
@@ -259,9 +268,13 @@ Namespace AlibreAddOnAssembly
                 Sub()
                     waited += watcher.Interval
                     Dim running As Boolean = _scriptRunning
-                    For Each dialogForm As Form In NewDialogs(handled)
-                        Center(dialogForm)
-                    Next
+                    Dim target As Form = ScriptWindow(handled)
+                    If target IsNot Nothing Then
+                        Center(target)
+                        watcher.Stop()
+                        watcher.Dispose()
+                        Return
+                    End If
                     If running AndAlso waited < DIALOG_WATCH_MS Then Return
                     watcher.Stop()
                     watcher.Dispose()
@@ -269,19 +282,21 @@ Namespace AlibreAddOnAssembly
             watcher.Start()
         End Sub
 
-        Private Function NewDialogs(handled As HashSet(Of IntPtr)) As List(Of Form)
-            Dim found As New List(Of Form)()
+        Private Function ScriptWindow(handled As HashSet(Of IntPtr)) As Form
+            Dim owner As UInteger = _scriptThreadId
+            If owner = 0UI Then Return Nothing
             For Each candidate As Form In OpenForms()
                 Try
                     If candidate Is _fallbackForm Then Continue For
                     If candidate.IsDisposed OrElse Not candidate.Visible Then Continue For
-                    If candidate.Width <= 0 OrElse candidate.Height <= 0 Then Continue For
                     If Not handled.Add(candidate.Handle) Then Continue For
-                    found.Add(candidate)
+                    Dim processId As UInteger
+                    If GetWindowThreadProcessId(candidate.Handle, processId) <> owner Then Continue For
+                    Return candidate
                 Catch
                 End Try
             Next
-            Return found
+            Return Nothing
         End Function
 
         Private Sub Center(target As Form)
@@ -300,7 +315,7 @@ Namespace AlibreAddOnAssembly
                 y = Math.Max(area.Top, Math.Min(y, area.Bottom - target.Height))
                 target.StartPosition = FormStartPosition.Manual
                 target.Location = New Point(x, y)
-                Log("Centered " & target.Text & " at " & target.Location.ToString() &
+                Log("Centered the script window " & target.Text & " at " & target.Location.ToString() &
                     " on " & Screen.FromRectangle(host).DeviceName & " over " & host.ToString())
             Catch ex As Exception
                 Log("Could not center the script dialog: " & ex.Message)
@@ -414,9 +429,13 @@ Namespace AlibreAddOnAssembly
             End Get
         End Property
 
+        <DllImport("kernel32.dll")>
+        Private Shared Function GetCurrentThreadId() As UInteger
+        End Function
+
         Public Sub RunInBackground(session As IADSession, sessionIdentifier As String, scriptPath As String,
-                                   parent As Form, completed As Action)
-            Dim worker As New Thread(Sub() Run(session, sessionIdentifier, scriptPath, parent, completed))
+                                   parent As Form, started As Action(Of UInteger), completed As Action)
+            Dim worker As New Thread(Sub() Run(session, sessionIdentifier, scriptPath, parent, started, completed))
             worker.SetApartmentState(ApartmentState.STA)
             worker.IsBackground = True
             worker.Name = "AlibreScript: " & IO.Path.GetFileName(scriptPath)
@@ -424,7 +443,14 @@ Namespace AlibreAddOnAssembly
         End Sub
 
         Private Sub Run(session As IADSession, sessionIdentifier As String, scriptPath As String,
-                        parent As Form, completed As Action)
+                        parent As Form, started As Action(Of UInteger), completed As Action)
+            If started IsNot Nothing Then
+                Try
+                    started(GetCurrentThreadId())
+                Catch ex As Exception
+                    AddOnRibbon.Log("Thread report failed: " & ex.Message)
+                End Try
+            End If
             Dim engine As ScriptEngine = Nothing
             Dim scope As ScriptScope = Nothing
             Try
